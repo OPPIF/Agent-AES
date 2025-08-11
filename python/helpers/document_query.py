@@ -61,7 +61,7 @@ class DocumentQueryStore:
     ):
         """Initialize a DocumentQueryStore instance."""
         self.agent = agent
-        self.vector_db: VectorDB | None = None
+        self.vector_db: VectorDB = self.init_vector_db()
 
     @staticmethod
     def normalize_uri(uri: str) -> str:
@@ -95,7 +95,9 @@ class DocumentQueryStore:
         return normalized
 
     def init_vector_db(self):
-        return VectorDB(self.agent, cache=True)
+        db = VectorDB(self.agent, cache=True)
+        db.load_local()
+        return db
 
     async def add_document(
         self, text: str, document_uri: str, metadata: dict | None = None
@@ -146,10 +148,6 @@ class DocumentQueryStore:
             await self.agent.rate_limiter(
                 model_config=self.agent.config.embeddings_model, input=docs_text
             )
-
-            # Initialize vector db if not already initialized
-            if not self.vector_db:
-                self.vector_db = self.init_vector_db()
 
             ids = await self.vector_db.insert_documents(docs)
             PrintStyle.standard(

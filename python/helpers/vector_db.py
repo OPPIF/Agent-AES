@@ -1,5 +1,7 @@
 from typing import Any, List, Sequence
 import uuid
+from pathlib import Path
+import pickle
 from langchain_community.vectorstores import FAISS
 
 # faiss needs to be patched for python 3.12 on arm #TODO remove once not needed
@@ -8,7 +10,7 @@ import faiss
 
 
 from langchain_core.documents import Document
-from langchain.storage import InMemoryByteStore
+from langchain.storage import LocalFileStore
 from langchain_community.docstore.in_memory import InMemoryDocstore
 from langchain_community.vectorstores.utils import (
     DistanceStrategy,
@@ -16,6 +18,11 @@ from langchain_community.vectorstores.utils import (
 from langchain.embeddings import CacheBackedEmbeddings
 
 from agent import Agent
+
+
+MEMORY_PATH = Path("memory")
+EMBED_CACHE_DIR = MEMORY_PATH / "embeddings"
+VECTOR_DB_DIR = MEMORY_PATH / "vector_db"
 
 
 class MyFaiss(FAISS):
@@ -29,6 +36,25 @@ class MyFaiss(FAISS):
 
     def get_all_docs(self) -> dict[str, Document]:
         return self.docstore._dict  # type: ignore
+
+
+class SerializedDocstore(InMemoryDocstore):
+    """Simple persistent docstore backed by a pickle file."""
+
+    def __init__(self, path: Path):
+        super().__init__()
+        self.path = path
+        self._load()
+
+    def _load(self) -> None:
+        if self.path.exists():
+            with open(self.path, "rb") as f:
+                self._dict = pickle.load(f)
+
+    def save(self) -> None:
+        self.path.parent.mkdir(parents=True, exist_ok=True)
+        with open(self.path, "wb") as f:
+            pickle.dump(self._dict, f)
 
 
 class VectorDB:
@@ -46,7 +72,9 @@ class VectorDB:
             "default",
         )
         if namespace not in VectorDB._cached_embeddings:
-            store = InMemoryByteStore()
+            store_dir = EMBED_CACHE_DIR / namespace
+            store_dir.mkdir(parents=True, exist_ok=True)
+            store = LocalFileStore(str(store_dir))
             VectorDB._cached_embeddings[namespace] = (
                 CacheBackedEmbeddings.from_bytes_store(
                     model,
@@ -60,17 +88,57 @@ class VectorDB:
         self.agent = agent
         self.cache = cache  # store cache preference
         self.embeddings = self._get_embeddings(agent, cache=cache)
-        self.index = faiss.IndexFlatIP(len(self.embeddings.embed_query("example")))
+        self.vector_path = VECTOR_DB_DIR
+        self.index_path = self.vector_path / "index.faiss"
+        self.docstore_path = self.vector_path / "docstore.pkl"
+        self.id_map_path = self.vector_path / "index_to_docstore_id.pkl"
 
-        self.db = MyFaiss(
-            embedding_function=self.embeddings,
-            index=self.index,
-            docstore=InMemoryDocstore(),
-            index_to_docstore_id={},
-            distance_strategy=DistanceStrategy.COSINE,
-            # normalize_L2=True,
-            relevance_score_fn=cosine_normalizer,
-        )
+        if not self.load_local():
+            dim = len(self.embeddings.embed_query("example"))
+            self.index = faiss.IndexFlatIP(dim)
+            self.db = MyFaiss(
+                embedding_function=self.embeddings,
+                index=self.index,
+                docstore=SerializedDocstore(self.docstore_path),
+                index_to_docstore_id={},
+                distance_strategy=DistanceStrategy.COSINE,
+                # normalize_L2=True,
+                relevance_score_fn=cosine_normalizer,
+            )
+
+    def save_local(self) -> None:
+        """Persist the FAISS index and docstore to disk."""
+        self.vector_path.mkdir(parents=True, exist_ok=True)
+        faiss.write_index(self.db.index, str(self.index_path))
+        if isinstance(self.db.docstore, SerializedDocstore):
+            self.db.docstore.save()
+        with open(self.id_map_path, "wb") as f:
+            pickle.dump(self.db.index_to_docstore_id, f)
+
+    def load_local(self) -> bool:
+        """Load the FAISS index and docstore from disk if available."""
+        try:
+            if (
+                self.index_path.exists()
+                and self.docstore_path.exists()
+                and self.id_map_path.exists()
+            ):
+                self.index = faiss.read_index(str(self.index_path))
+                docstore = SerializedDocstore(self.docstore_path)
+                with open(self.id_map_path, "rb") as f:
+                    id_map = pickle.load(f)
+                self.db = MyFaiss(
+                    embedding_function=self.embeddings,
+                    index=self.index,
+                    docstore=docstore,
+                    index_to_docstore_id=id_map,
+                    distance_strategy=DistanceStrategy.COSINE,
+                    relevance_score_fn=cosine_normalizer,
+                )
+                return True
+        except Exception:
+            pass
+        return False
 
     async def search_by_similarity_threshold(
         self, query: str, limit: int, threshold: float, filter: str = ""
@@ -116,6 +184,7 @@ class VectorDB:
             )
 
             self.db.add_documents(documents=docs, ids=ids)
+            self.save_local()
         return ids
 
     async def delete_documents_by_ids(self, ids: list[str]):
@@ -126,6 +195,7 @@ class VectorDB:
         if rem_docs:
             rem_ids = [doc.metadata["id"] for doc in rem_docs]  # ids to remove
             await self.db.adelete(ids=rem_ids)
+            self.save_local()
         return rem_docs
 
 
