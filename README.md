@@ -117,13 +117,25 @@ A detailed setup guide for Windows, macOS, and Linux with a video can be found i
 
 ### ⚡ Quick Start
 
-```bash
-# Pull and run with Docker
+Use the helper script to build/update images and start the container:
 
+```bash
+git clone https://github.com/agent0ai/agent-zero.git && cd agent-zero && ./scripts/setup_docker.sh
+```
+
+Customize the port, git branch or data volume by setting environment variables before running:
+
+```bash
+A0_PORT=50001 A0_BRANCH=development A0_VOLUME="$HOME/agent-zero-data" ./scripts/setup_docker.sh
+```
+
+The Web UI will be available at `http://localhost:${A0_PORT:-50080}`.
+
+Alternatively, you can pull and run the prebuilt image directly:
+
+```bash
 docker pull agent0ai/agent-zero
 docker run -p 50001:80 agent0ai/agent-zero
-
-# Visit http://localhost:50001 to start
 ```
 
 ## 🐳 Fully Dockerized, with Speech-to-Text and TTS
