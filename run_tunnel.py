@@ -43,10 +43,15 @@ def run():
             request_handler=NoRequestLoggingWSGIRequestHandler,
             threaded=True,
         )
-        
+
         process.set_server(server)
         # server.log_startup()
-        server.serve_forever()
+        while True:
+            try:
+                server.serve_forever()
+                break
+            except OSError as e:
+                PrintStyle.error(f"Tunnel API socket error: {e}")
     finally:
         # Clean up tunnel if it was started
         if tunnel:

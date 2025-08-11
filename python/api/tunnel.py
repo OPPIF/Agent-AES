@@ -1,6 +1,7 @@
 from python.helpers.api import ApiHandler, Request, Response
 from python.helpers import runtime
 from python.helpers.tunnel_manager import TunnelManager
+from python.helpers.print_style import PrintStyle
 
 class Tunnel(ApiHandler):
     async def process(self, input: dict, request: Request) -> dict | Response:
@@ -14,17 +15,16 @@ class Tunnel(ApiHandler):
         if action == "create":
             port = runtime.get_web_ui_port()
             provider = input.get("provider", "serveo")  # Default to serveo
-            tunnel_url = tunnel_manager.start_tunnel(port, provider)
-            if tunnel_url is None:
-                # Add a little delay and check again - tunnel might be starting
-                import time
-                time.sleep(2)
-                tunnel_url = tunnel_manager.get_tunnel_url()
-            
+            try:
+                tunnel_url = tunnel_manager.start_tunnel(port, provider)
+            except OSError as e:
+                PrintStyle.error(f"Socket error while starting tunnel: {e}")
+                tunnel_url = None
+
             return {
                 "success": tunnel_url is not None,
                 "tunnel_url": tunnel_url,
-                "message": "Tunnel creation in progress" if tunnel_url is None else "Tunnel created successfully"
+                "message": "Tunnel created successfully" if tunnel_url else "Tunnel failed to start",
             }
         
         elif action == "stop":
