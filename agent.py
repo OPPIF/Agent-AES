@@ -819,20 +819,34 @@ class Agent:
         )
 
     async def handle_response_stream(self, stream: str):
+        if len(stream) < 25:
+            return  # no reason to try
+
         try:
-            if len(stream) < 25:
-                return  # no reason to try
             response = DirtyJson.parse_string(stream)
-            if isinstance(response, dict):
+        except (ValueError, TypeError) as e:
+            msg = f"{self.agent_name}: Failed to parse response stream: {e}"
+            self.context.log.log(type="error", content=msg)
+            PrintStyle(font_color="red", padding=True).print(msg)
+            return
+        except Exception as e:
+            msg = f"{self.agent_name}: Unexpected error parsing response stream: {e}"
+            self.context.log.log(type="error", content=msg)
+            PrintStyle(font_color="red", padding=True).print(msg)
+            return
+
+        if isinstance(response, dict):
+            try:
                 await self.call_extensions(
                     "response_stream",
                     loop_data=self.loop_data,
                     text=stream,
                     parsed=response,
                 )
-
-        except Exception as e:
-            pass
+            except Exception as e:
+                msg = f"{self.agent_name}: Error in response_stream extensions: {e}"
+                self.context.log.log(type="error", content=msg)
+                PrintStyle(font_color="red", padding=True).print(msg)
 
     def get_tool(
         self, name: str, method: str | None, args: dict, message: str, loop_data: LoopData | None, **kwargs
