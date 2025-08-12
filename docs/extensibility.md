@@ -273,3 +273,20 @@ In this example:
 - Leverage existing helpers rather than duplicating functionality
 - Test extensions thoroughly to ensure they don't interfere with core functionality
 - Document your extensions to make them easier to maintain and share
+
+## Web UI Integration
+Third-party extensions that add interface elements often need to call
+backend endpoints. The web UI exposes helper functions in
+`/js/api.js` that handle CSRF tokens and other details.
+
+```javascript
+import * as api from '/js/api.js';
+
+const response = await api.fetchApi('/my_endpoint', {
+  method: 'POST',
+  body: JSON.stringify({ foo: 'bar' })
+});
+```
+
+`window.fetchApi` is no longer available globally, so extensions must
+explicitly import the module to access these helpers.

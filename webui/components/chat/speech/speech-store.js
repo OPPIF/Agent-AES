@@ -2,6 +2,7 @@ import { createStore } from "/js/AlpineStore.js";
 import { updateChatInput, sendMessage } from "/index.js";
 import { sleep } from "/js/sleep.js";
 import { store as microphoneSettingStore } from "/components/settings/speech/microphone-setting-store.js";
+import * as api from "/js/api.js";
 
 const Status = {
   INACTIVE: "inactive",
@@ -97,7 +98,7 @@ const model = {
   // Load settings from server
   async loadSettings() {
     try {
-      const response = await fetchApi("/settings_get", { method: "POST" });
+      const response = await api.fetchApi("/settings_get", { method: "POST" });
       const data = await response.json();
       const speechSection = data.settings.sections.find(
         (s) => s.title === "Speech"
