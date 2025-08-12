@@ -62,9 +62,10 @@ def _determine_server_type(config_dict: dict) -> str:
             return "MCPServerLocal"
         # For future types, we could add more cases here
         else:
-            # For unknown types, fall back to URL-based detection
-            # This allows for graceful handling of new types
-            pass
+            # For unknown types, raise an explicit error so callers can
+            # surface a clear message to users instead of silently
+            # defaulting to another server type.
+            raise ValueError(f"Unsupported server type: {server_type}")
 
     # Backward compatibility: if no type specified, use URL-based detection
     if "url" in config_dict or "serverUrl" in config_dict:
@@ -593,11 +594,22 @@ class MCPConfig(BaseModel):
                 continue
 
             try:
+                server_type = _determine_server_type(server_item)
                 # not generic MCPServer because: "Annotated can not be instatioated"
-                if server_item.get("url", None) or server_item.get("serverUrl", None):
+                if server_type == "MCPServerRemote":
                     self.servers.append(MCPServerRemote(server_item))
                 else:
                     self.servers.append(MCPServerLocal(server_item))
+            except ValueError as e:
+                error_msg = str(e)
+                (
+                    PrintStyle(
+                        background_color="grey", font_color="red", padding=True
+                    ).print(f"MCPConfig::__init__: {error_msg}")
+                )
+                self.disconnected_servers.append(
+                    {"config": server_item, "error": error_msg, "name": server_name}
+                )
             except Exception as e:
                 # log the error
                 error_msg = str(e)
@@ -608,7 +620,6 @@ class MCPConfig(BaseModel):
                         f"MCPConfig::__init__: Failed to create MCPServer '{server_name}': {error_msg}"
                     )
                 )
-                # add to failed servers
                 self.disconnected_servers.append(
                     {"config": server_item, "error": error_msg, "name": server_name}
                 )

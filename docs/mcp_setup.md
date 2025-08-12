@@ -10,6 +10,16 @@ MCP servers are external processes or services that expose a set of tools that A
 2.  **Remote SSE Servers**: These are servers, often accessible over a network, that Agent Zero communicates with using Server-Sent Events (SSE), usually over HTTP/S.
 3.  **Remote Streaming HTTP Servers**: These are servers that use the streamable HTTP transport protocol for MCP communication, providing an alternative to SSE for network-based MCP servers.
 
+### Supported `type` values
+
+When defining a server in your configuration, the optional `"type"` field may be used to explicitly specify how Agent Zero should connect. The supported values are:
+
+- `"stdio"` for local stdio servers
+- `"sse"` for remote SSE servers
+- Streaming HTTP variants: `"http-stream"`, `"streaming-http"`, `"streamable-http"`, or `"http-streaming"`
+
+Any other value will cause Agent Zero to reject the configuration with an error.
+
 ## How Agent Zero Consumes MCP Tools
 
 Agent Zero discovers and integrates MCP tools dynamically:
