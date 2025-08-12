@@ -236,8 +236,8 @@ class AgentConfig:
 @dataclass
 class UserMessage:
     message: str
-    attachments: list[str] = field(default_factory=list[str])
-    system_message: list[str] = field(default_factory=list[str])
+    attachments: list[str] = field(default_factory=list)
+    system_message: list[str] = field(default_factory=list)
 
 
 class LoopData:
