@@ -5,6 +5,14 @@ import { getAutoScroll } from "/index.js";
 import { store as _messageResizeStore } from "/components/messages/resize/message-resize-store.js"; // keep here, required in html
 import { store as attachmentsStore } from "/components/chat/attachments/attachmentsStore.js";
 
+// Key labels that require special styling in key-value pair tables
+// Add new cognitive labels here and provide the CSS class to apply.
+// Example: specialKeys.analysis = "msg-analysis";
+const specialKeys = {
+  thoughts: "msg-thoughts",
+  reasoning: "msg-thoughts",
+};
+
 const chatHistory = document.getElementById("chat-history");
 
 let messageGroup = null;
@@ -670,9 +678,8 @@ function drawKvps(container, kvps, latex) {
     for (let [key, value] of Object.entries(kvps)) {
       const row = table.insertRow();
       row.classList.add("kvps-row");
-      if (key === "thoughts" || key === "reasoning")
-        // TODO: find a better way to determine special class assignment
-        row.classList.add("msg-thoughts");
+      const specialClass = specialKeys[key];
+      if (specialClass) row.classList.add(specialClass);
 
       const th = row.insertCell();
       th.textContent = convertToTitleCase(key);
