@@ -26,6 +26,7 @@ from . import files
 from langchain_core.documents import Document
 import uuid
 from python.helpers import knowledge_import
+from python.helpers.graph_memory import GraphMemory
 from python.helpers.log import Log, LogItem
 from enum import Enum
 from agent import Agent
@@ -219,6 +220,7 @@ class Memory:
         self.agent = agent
         self.db = db
         self.memory_subdir = memory_subdir
+        self.graph = GraphMemory.get(memory_subdir)
 
     async def preload_knowledge(
         self, log_item: LogItem | None, kn_dirs: list[str], memory_subdir: str
@@ -338,6 +340,8 @@ class Memory:
                 # tot += len(fnd["ids"])
                 await self.db.adelete(ids=document_ids)
                 tot += len(document_ids)
+                for rid in document_ids:
+                    self.graph.remove_document(rid)
 
             # If fewer than K document IDs, break the loop
             if len(document_ids) < k:
@@ -355,6 +359,8 @@ class Memory:
         if rem_docs:
             rem_ids = [doc.metadata["id"] for doc in rem_docs]  # ids to remove
             await self.db.adelete(ids=rem_ids)
+            for rid in rem_ids:
+                self.graph.remove_document(rid)
 
         if rem_docs:
             self._save_db()  # persist
@@ -375,6 +381,7 @@ class Memory:
                 doc.metadata["timestamp"] = timestamp  # add timestamp
                 if not doc.metadata.get("area", ""):
                     doc.metadata["area"] = Memory.Area.MAIN.value
+                self.graph.add_document(doc)
 
             # rate limiter
             docs_txt = "".join(self.format_docs_plain(docs))
@@ -385,6 +392,12 @@ class Memory:
             await self.db.aadd_documents(documents=docs, ids=ids)
             self._save_db()  # persist
         return ids
+
+    async def query_graph(self, node_id: str, relation_type: str | None = None):
+        ids = self.graph.query(node_id, relation_type)
+        if not ids:
+            return []
+        return await self.db.aget_by_ids(ids)
 
     def _save_db(self):
         Memory._save_db_file(self.db, self.memory_subdir)
@@ -453,3 +466,4 @@ def get_custom_knowledge_subdir_abs(agent: Agent) -> str:
 def reload():
     # clear the memory index, this will force all DBs to reload
     Memory.index = {}
+    GraphMemory._instances = {}
