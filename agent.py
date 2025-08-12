@@ -410,7 +410,7 @@ class Agent:
         await self.call_extensions("message_loop_prompts_before", loop_data=loop_data)
 
         # set system prompt and message history
-        loop_data.system = await self.get_system_prompt(self.loop_data)
+        loop_data.system = await self.get_system_prompt(loop_data)
         loop_data.history_output = self.history.output()
 
         # and allow extensions to edit them
