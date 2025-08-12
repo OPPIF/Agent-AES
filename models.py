@@ -16,6 +16,7 @@ from typing import (
 
 from litellm import completion, acompletion, embedding
 import litellm
+from litellm.exceptions import BadRequestError
 
 from python.helpers import dotenv
 from python.helpers.dotenv import load_dotenv
@@ -254,12 +255,22 @@ class LiteLLMChatWrapper(SimpleChatModel):
         msgs_conv = self._convert_messages(messages)
 
         # call model
-        _completion = await acompletion(
-            model=self.model_name,
-            messages=msgs_conv,
-            stream=True,
-            **{**self.kwargs, **kwargs},
-        )
+        if not self.model_name or not self.model_name.strip():
+            raise ValueError("Model name is empty; ensure it is configured correctly")
+
+        try:
+            _completion = await acompletion(
+                model=self.model_name,
+                messages=msgs_conv,
+                stream=True,
+                **{**self.kwargs, **kwargs},
+            )
+        except BadRequestError as e:
+            if getattr(self, "provider", "").lower() == "deepseek":
+                raise BadRequestError(
+                    f"DeepSeek model '{self.model_name}' not found; check configuration"
+                ) from e
+            raise
 
         # results
         reasoning = ""
