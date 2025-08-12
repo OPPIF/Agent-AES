@@ -99,6 +99,40 @@ When a tool is called, it goes through the following lifecycle:
 3. `execute` method (main functionality)
 4. `after_execution` method
 
+#### Extension Store
+Agent Zero includes a lightweight extension store to discover public,
+signed tools or extensions.  The store is driven by the
+`ExtensionStore` helper located at `python/helpers/extension_store.py`.
+It reads a JSON index of available packages, each providing a SHA256
+digest so the archive can be verified before installation.
+
+##### Python API
+```python
+from python.helpers.extension_store import ExtensionStore
+
+store = ExtensionStore("https://example.com/extensions.json")
+available = store.list_extensions()  # returns ExtensionPackage objects
+```
+
+The helper exposes `download` and `install` methods.  Installation
+verifies the digest and extracts the archive into `python/tools` or the
+appropriate extension folder and then refreshes the extension cache.
+
+##### Tool interface
+Agents may install packages at runtime using the `extension_install`
+tool.  The tool accepts either a package `name` that exists in the store
+index or a direct `url`/`sha256` pair.  A typical call looks like:
+
+```json
+{
+  "name": "extension_install",
+  "args": {"name": "my_extension"}
+}
+```
+
+The tool downloads the archive, validates the signature and installs it
+only if verification succeeds.
+
 ### API Endpoints
 API endpoints expose Agent Zero functionality to external systems or the user interface. They are modular and can be extended or replaced.
 
