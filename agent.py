@@ -568,9 +568,37 @@ class Agent:
         return self.hist_add_message(False, content=content)
 
     def concat_messages(
-        self, messages
-    ):  # TODO add param for message range, topic, history
-        return self.history.output_text(human_label="user", ai_label="assistant")
+        self,
+        start: int | None = None,
+        end: int | None = None,
+        topics: list[int] | None = None,
+    ):
+        """Return concatenated message history.
+
+        Parameters
+        ----------
+        start, end : int | None
+            Optional range of messages to include.
+        topics : list[int] | None
+            Optional list of topic indexes to include.
+
+        Returns
+        -------
+        str
+            Concatenated messages formatted with user/assistant labels.
+        """
+
+        extra: dict[str, Any] = {}
+        if start is not None:
+            extra["start"] = start
+        if end is not None:
+            extra["end"] = end
+        if topics is not None:
+            extra["topics"] = topics
+
+        return self.history.output_text(
+            human_label="user", ai_label="assistant", **extra
+        )
 
     def get_chat_model(self):
         return models.get_chat_model(
