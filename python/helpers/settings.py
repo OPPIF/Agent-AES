@@ -7,7 +7,7 @@ import subprocess
 from typing import Any, Literal, TypedDict, cast
 
 import models
-from python.helpers import runtime, whisper, defer, git
+from python.helpers import runtime, whisper, git, job_queue
 from . import files, dotenv
 from python.helpers.print_style import PrintStyle
 from python.helpers.providers import get_providers
@@ -1256,9 +1256,10 @@ def _apply_settings(previous: Settings | None):
 
         # reload whisper model if necessary
         if not previous or _settings["stt_model_size"] != previous["stt_model_size"]:
-            task = defer.DeferredTask().start_task(
-                whisper.preload, _settings["stt_model_size"]
-            )  # TODO overkill, replace with background task
+            job_queue.schedule(
+                whisper.preload(_settings["stt_model_size"]),
+                "whisper preload",
+            )
 
         # force memory reload on embedding model change
         if not previous or (
@@ -1314,9 +1315,10 @@ def _apply_settings(previous: Settings | None):
                     type="info", content="Finished updating MCP settings.", temp=True
                 )
 
-            task2 = defer.DeferredTask().start_task(
-                update_mcp_settings, config.mcp_servers
-            )  # TODO overkill, replace with background task
+            job_queue.schedule(
+                update_mcp_settings(config.mcp_servers),
+                "MCP settings update",
+            )
 
         # update token in mcp server
         current_token = (
@@ -1329,9 +1331,10 @@ def _apply_settings(previous: Settings | None):
 
                 DynamicMcpProxy.get_instance().reconfigure(token=token)
 
-            task3 = defer.DeferredTask().start_task(
-                update_mcp_token, current_token
-            )  # TODO overkill, replace with background task
+            job_queue.schedule(
+                update_mcp_token(current_token),
+                "MCP token refresh",
+            )
 
 
 def _env_to_dict(data: str):
