@@ -1,4 +1,6 @@
 
+import * as api from "/js/api.js";
+
 const settingsModalProxy = {
     isOpen: false,
     settings: {},
@@ -363,7 +365,7 @@ document.addEventListener('alpine:init', function () {
             async fetchSettings() {
                 try {
                     this.isLoading = true;
-                    const response = await fetchApi('/api/settings_get', {
+                    const response = await api.fetchApi('/api/settings_get', {
                         method: 'POST',
                         headers: {
                             'Content-Type': 'application/json'
@@ -436,7 +438,7 @@ document.addEventListener('alpine:init', function () {
                     }
 
                     // Send request
-                    const response = await fetchApi('/api/settings_save', {
+                    const response = await api.fetchApi('/api/settings_save', {
                         method: 'POST',
                         headers: {
                             'Content-Type': 'application/json'
@@ -493,7 +495,7 @@ document.addEventListener('alpine:init', function () {
                     }
 
                     // Send test request
-                    const response = await fetchApi('/api/test_connection', {
+                    const response = await api.fetchApi('/api/test_connection', {
                         method: 'POST',
                         headers: {
                             'Content-Type': 'application/json'
