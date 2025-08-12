@@ -9,6 +9,24 @@ const chatHistory = document.getElementById("chat-history");
 
 let messageGroup = null;
 
+// Scroll a container to the bottom when new nodes are added
+export function autoScrollIfNeeded(element) {
+  if (!element) return;
+  const scrollToBottom = () => {
+    if (getAutoScroll()) {
+      element.scrollTop = element.scrollHeight;
+    }
+  };
+
+  // Initial scroll in case the element already has content
+  scrollToBottom();
+
+  const observer = new MutationObserver(() => {
+    scrollToBottom();
+  });
+  observer.observe(element, { childList: true, subtree: true });
+}
+
 export function setMessage(id, type, heading, content, temp, kvps = null) {
   // Search for the existing message container by id
   let messageContainer = document.getElementById(`message-${id}`);
@@ -243,11 +261,7 @@ export function _drawMessage(
     messageContainer.classList.add("message-followup");
   }
 
-  // autoscroll the body if needed
-  // if (getAutoScroll()) #TODO needs a better redraw system
-    setTimeout(() => {
-      bodyDiv.scrollTop = bodyDiv.scrollHeight;
-    }, 0);
+  autoScrollIfNeeded(bodyDiv);
 
   return messageDiv;
 }
@@ -677,11 +691,7 @@ function drawKvps(container, kvps, latex) {
         addValue(value);
       }
 
-      // autoscroll the KVP value if needed
-      // if (getAutoScroll()) #TODO needs a better redraw system
-      setTimeout(() => {
-        tdiv.scrollTop = tdiv.scrollHeight;
-      }, 0);
+      autoScrollIfNeeded(tdiv);
 
       function addValue(value) {
         if (typeof value === "object") value = JSON.stringify(value, null, 2);
