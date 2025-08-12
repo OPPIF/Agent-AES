@@ -24,6 +24,7 @@ from python.helpers.files import get_abs_path, make_dirs, read_file, write_file
 from python.helpers.localization import Localization
 import pytz
 from typing import Annotated
+from python.helpers import resource_monitor
 
 SCHEDULER_FOLDER = "tmp/scheduler"
 
@@ -763,6 +764,11 @@ class TaskScheduler:
                 return
             if task_snapshot.state == TaskState.RUNNING:
                 self._printer.print(f"Scheduler Task '{task_snapshot.name}' already running, skipping")
+                return
+
+            if not resource_monitor.within_limits():
+                self._printer.print(
+                    f"Scheduler Task '{task_snapshot.name}' postponed: high system load")
                 return
 
             # Atomically fetch and check the task's current state
