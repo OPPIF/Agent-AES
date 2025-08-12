@@ -841,6 +841,7 @@ class Agent:
         from python.helpers.tool import Tool
 
         classes = []
+        error_message = None
 
         # try agent tools first
         if self.config.profile:
@@ -849,7 +850,12 @@ class Agent:
                     "agents/" + self.config.profile + "/tools/" + name + ".py", Tool
                 )
             except Exception as e:
-                pass
+                error_message = f"Failed to load custom tool '{name}': {e}"
+                self.context.log.log(
+                    type="error",
+                    heading=f"Error importing custom tool '{name}'",
+                    content=str(e),
+                )
 
         # try default tools
         if not classes:
@@ -858,10 +864,25 @@ class Agent:
                     "python/tools/" + name + ".py", Tool
                 )
             except Exception as e:
-                pass
+                error_message = f"Failed to load default tool '{name}': {e}"
+                self.context.log.log(
+                    type="error",
+                    heading=f"Error importing default tool '{name}'",
+                    content=str(e),
+                )
+
         tool_class = classes[0] if classes else Unknown
+        tool_message = message
+        if tool_class is Unknown and error_message:
+            tool_message = error_message
         return tool_class(
-            agent=self, name=name, method=method, args=args, message=message, loop_data=loop_data, **kwargs
+            agent=self,
+            name=name,
+            method=method,
+            args=args,
+            message=tool_message,
+            loop_data=loop_data,
+            **kwargs,
         )
 
     async def call_extensions(self, extension_point: str, **kwargs) -> Any:
