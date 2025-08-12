@@ -2,6 +2,7 @@ from abc import abstractmethod
 import asyncio
 from collections import OrderedDict
 from collections.abc import Mapping
+import heapq
 import json
 import math
 from typing import Coroutine, Literal, TypedDict, cast, Union, Dict, List, Any
@@ -155,7 +156,47 @@ class Topic(Record):
         self.summary = await self.summarize_messages(self.messages)
         return self.summary
 
+    def find_large_messages(self, msg_max_size):
+        """Yield messages exceeding the allowed size with their stats.
+
+        Using a generator keeps memory usage proportional only to the
+        number of qualifying messages instead of the whole history.
+        """
+        for msg in (m for m in self.messages if not m.summary):
+            out = msg.output()
+            text = output_text(out)
+            tok = msg.get_tokens()
+            leng = len(text)
+            if tok > msg_max_size:
+                yield (msg, tok, leng, out)
+
+    def truncate_message(self, msg: Message, tok: int, leng: int, out, msg_max_size: float):
+        """Replace a large message with a truncated summary."""
+        trim_to_chars = leng * (msg_max_size / tok)
+
+        # raw messages will be replaced as a whole, they would become invalid when truncated
+        if _is_raw_message(out[0]["content"]):
+            msg.set_summary(
+                "Message content replaced to save space in context window",
+            )
+
+        # regular messages will be truncated
+        else:
+            trunc = messages.truncate_dict_by_ratio(
+                self.history.agent,
+                out[0]["content"],
+                trim_to_chars * 1.15,
+                trim_to_chars * 0.85,
+            )
+            msg.set_summary(_json_dumps(trunc))
+
     async def compress_large_messages(self) -> bool:
+        """Compress the largest message exceeding the allowed size.
+
+        A generator combined with ``heapq`` locates the largest candidate
+        without constructing a full list, reducing memory overhead for
+        long histories.
+        """
         set = settings.get_settings()
         msg_max_size = (
             set["chat_model_ctx_length"]
@@ -163,36 +204,18 @@ class Topic(Record):
             * CURRENT_TOPIC_RATIO
             * LARGE_MESSAGE_TO_TOPIC_RATIO
         )
-        large_msgs = []
-        for m in (m for m in self.messages if not m.summary):
-            # TODO refactor this
-            out = m.output()
-            text = output_text(out)
-            tok = m.get_tokens()
-            leng = len(text)
-            if tok > msg_max_size:
-                large_msgs.append((m, tok, leng, out))
-        large_msgs.sort(key=lambda x: x[1], reverse=True)
-        for msg, tok, leng, out in large_msgs:
-            trim_to_chars = leng * (msg_max_size / tok)
-            # raw messages will be replaced as a whole, they would become invalid when truncated
-            if _is_raw_message(out[0]["content"]):
-                msg.set_summary(
-                    "Message content replaced to save space in context window"
-                )
 
-            # regular messages will be truncated
-            else:
-                trunc = messages.truncate_dict_by_ratio(
-                    self.history.agent,
-                    out[0]["content"],
-                    trim_to_chars * 1.15,
-                    trim_to_chars * 0.85,
-                )
-                msg.set_summary(_json_dumps(trunc))
+        candidates = heapq.nlargest(
+            1, self.find_large_messages(msg_max_size), key=lambda x: x[1]
+        )
 
-            return True
-        return False
+        if not candidates:
+            return False
+
+        msg, tok, leng, out = candidates[0]
+        self.truncate_message(msg, tok, leng, out, msg_max_size)
+        return True
+
 
     async def compress(self) -> bool:
         compress = await self.compress_large_messages()
