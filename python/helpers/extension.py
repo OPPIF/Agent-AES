@@ -58,3 +58,19 @@ async def _get_extensions(folder:str):
 
     return classes
 
+
+def invalidate_cache(path: str | None = None) -> None:
+    """Invalidate cached extension classes.
+
+    When ``path`` is provided, only the entry for the given folder is
+    cleared.  Without ``path`` the whole cache is flushed.  This is used
+    by the extension store when new extensions are installed so they are
+    picked up without restarting the process.
+    """
+    global _cache
+    if path:
+        path = files.get_abs_path(path)
+        _cache.pop(path, None)
+    else:
+        _cache.clear()
+
