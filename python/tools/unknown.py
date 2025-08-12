@@ -6,6 +6,8 @@ from python.extensions.system_prompt._10_system_prompt import (
 
 class Unknown(Tool):
     async def execute(self, **kwargs):
+        if self.message:
+            return Response(message=self.message, break_loop=False)
         tools = get_tools_prompt(self.agent)
         return Response(
             message=self.agent.read_prompt(
