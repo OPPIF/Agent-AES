@@ -42,8 +42,12 @@ class MicrophoneInput {
             silenceDuration: 1000,
             waitingTimeout: 2000,
             minSpeechDuration: 500,
+            suppressionEnabled: true,
             ...options
         };
+
+        // suppression state (used when TTS is speaking)
+        this.isSuppressed = false;
     }
 
     get status() {
@@ -196,8 +200,9 @@ class MicrophoneInput {
     
 
     startAudioAnalysis() {
+        if (this.options.suppressionEnabled && this.isSuppressed) return;
         const analyzeFrame = () => {
-            if (this.status === Status.INACTIVE) return;
+            if (this.status === Status.INACTIVE || (this.options.suppressionEnabled && this.isSuppressed)) return;
 
             const dataArray = new Uint8Array(this.analyserNode.fftSize);
             this.analyserNode.getByteTimeDomainData(dataArray);
@@ -214,12 +219,13 @@ class MicrophoneInput {
 
             // Update status based on audio level
             if (rms > this.options.silenceThreshold) {
-                this.lastAudioTime = now;
-                this.silenceStartTime = null;
+                if (!(this.options.suppressionEnabled && this.isSuppressed)) {
+                    this.lastAudioTime = now;
+                    this.silenceStartTime = null;
 
-                if (this.status === Status.LISTENING || this.status === Status.WAITING) {
-                    if (!speech.isSpeaking()) // TODO? a better way to ignore agent's voice?
+                    if (this.status === Status.LISTENING || this.status === Status.WAITING) {
                         this.status = Status.RECORDING;
+                    }
                 }
             } else if (this.status === Status.RECORDING) {
                 if (!this.silenceStartTime) {
@@ -242,6 +248,22 @@ class MicrophoneInput {
         if (this.analysisFrame) {
             cancelAnimationFrame(this.analysisFrame);
             this.analysisFrame = null;
+        }
+    }
+
+    setSuppression(active) {
+        if (!this.options.suppressionEnabled) return;
+        this.isSuppressed = active;
+        if (active) {
+            this.stopRecording();
+            this.stopAudioAnalysis();
+            if (this.status !== Status.INACTIVE) {
+                this.status = Status.LISTENING;
+            }
+        } else {
+            if (this.status !== Status.INACTIVE) {
+                this.startAudioAnalysis();
+            }
         }
     }
 
@@ -310,10 +332,14 @@ async function initializeMicrophoneInput() {
             language: 'en',
             silenceThreshold: 0.07,
             silenceDuration: 1000,
-            waitingTimeout: 1500
+            waitingTimeout: 1500,
+            suppressionEnabled: true
         }
     );
     microphoneInput.status = Status.ACTIVATING;
+
+    // allow TTS module to suppress recording during playback
+    speech.setSuppressionCallback((active) => microphoneInput?.setSuppression(active));
 
     return await microphoneInput.initialize();
 }
@@ -357,6 +383,7 @@ class Speech {
     constructor() {
         this.synth = window.speechSynthesis;
         this.utterance = null;
+        this.suppressionCallback = null;
     }
 
     stripEmojis(str) {
@@ -375,6 +402,12 @@ class Speech {
         text = this.stripEmojis(text);
         this.utterance = new SpeechSynthesisUtterance(text);
 
+        // call suppression callback when speaking
+        this.suppressionCallback?.(true);
+
+        this.utterance.onend = () => this.suppressionCallback?.(false);
+        this.utterance.onerror = () => this.suppressionCallback?.(false);
+
         // Speak the new utterance
         this.synth.speak(this.utterance);
     }
@@ -383,12 +416,17 @@ class Speech {
         if (this.isSpeaking()) {
             this.synth.cancel();
         }
+        this.suppressionCallback?.(false);
     }
 
     isSpeaking() {
         return this.synth?.speaking || false;
     }
+
+    setSuppressionCallback(callback) {
+        this.suppressionCallback = callback;
+    }
 }
 
 export const speech = new Speech();
-window.speech = speech
+window.speech = speech;
