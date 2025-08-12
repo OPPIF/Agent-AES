@@ -25,6 +25,8 @@ from python.helpers.localization import Localization
 import pytz
 from typing import Annotated
 
+from python.helpers.remote_agent import RemoteAgent
+
 SCHEDULER_FOLDER = "tmp/scheduler"
 
 # ----------------------
@@ -136,6 +138,7 @@ class BaseTask(BaseModel):
     updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     last_run: datetime | None = None
     last_result: str | None = None
+    agent_location: str | None = None
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
@@ -152,6 +155,7 @@ class BaseTask(BaseModel):
                last_run: datetime | None = None,
                last_result: str | None = None,
                context_id: str | None = None,
+               agent_location: str | None = None,
                **kwargs):
         with self._lock:
             if name is not None:
@@ -177,6 +181,9 @@ class BaseTask(BaseModel):
                 self.updated_at = datetime.now(timezone.utc)
             if context_id is not None:
                 self.context_id = context_id
+                self.updated_at = datetime.now(timezone.utc)
+            if agent_location is not None:
+                self.agent_location = agent_location
                 self.updated_at = datetime.now(timezone.utc)
             for key, value in kwargs.items():
                 if value is not None:
@@ -609,6 +616,7 @@ class TaskScheduler:
     _tasks: SchedulerTaskList
     _printer: PrintStyle
     _instance = None
+    _remote_agents: Dict[str, RemoteAgent]
 
     @classmethod
     def get(cls) -> "TaskScheduler":
@@ -621,7 +629,11 @@ class TaskScheduler:
         if not hasattr(self, '_initialized'):
             self._tasks = SchedulerTaskList.get()
             self._printer = PrintStyle(italic=True, font_color="green", padding=False)
+            self._remote_agents = {}
             self._initialized = True
+
+    def register_remote_agent(self, name: str, agent: RemoteAgent) -> None:
+        self._remote_agents[name] = agent
 
     async def reload(self):
         await self._tasks.reload()
@@ -753,6 +765,17 @@ class TaskScheduler:
         save_tmp_chat(context)
 
     async def _run_task(self, task: Union[ScheduledTask, AdHocTask, PlannedTask], task_context: str | None = None):
+        if getattr(task, 'agent_location', None):
+            agent = self._remote_agents.get(task.agent_location)
+            if agent:
+                result = await agent.run_task(serialize_task(task))
+                await self.update_task(
+                    task.uuid,
+                    state=TaskState.IDLE,
+                    last_run=datetime.now(timezone.utc),
+                    last_result=str(result),
+                )
+                return
 
         async def _run_task_wrapper(task_uuid: str, task_context: str | None = None):
 
@@ -1049,7 +1072,8 @@ def serialize_task(task: Union[ScheduledTask, AdHocTask, PlannedTask]) -> Dict[s
         "last_run": serialize_datetime(task.last_run),
         "next_run": serialize_datetime(task.get_next_run()),
         "last_result": task.last_result,
-        "context_id": task.context_id
+        "context_id": task.context_id,
+        "agent_location": task.agent_location,
     }
 
     # Add type-specific fields
@@ -1113,7 +1137,8 @@ def deserialize_task(task_data: Dict[str, Any], task_class: Optional[Type[T]] = 
         "updated_at": parse_datetime(task_data.get("updated_at")),
         "last_run": parse_datetime(task_data.get("last_run")),
         "last_result": task_data.get("last_result"),
-        "context_id": task_data.get("context_id")
+        "context_id": task_data.get("context_id"),
+        "agent_location": task_data.get("agent_location"),
     }
 
     # Add type-specific fields
