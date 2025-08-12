@@ -368,7 +368,8 @@ MCPServer = Annotated[
 class MCPConfig(BaseModel):
     servers: list[MCPServer] = Field(default_factory=list)
     disconnected_servers: list[dict[str, Any]] = Field(default_factory=list)
-    __lock: ClassVar[threading.Lock] = PrivateAttr(default=threading.Lock())
+    __lock: ClassVar[threading.Lock] = threading.Lock()
+    __init_condition: ClassVar[threading.Condition] = threading.Condition(__lock)
     __instance: ClassVar[Any] = PrivateAttr(default=None)
     __initialized: ClassVar[bool] = PrivateAttr(default=False)
 
@@ -387,6 +388,7 @@ class MCPConfig(BaseModel):
     @classmethod
     def update(cls, config_str: str) -> Any:
         with cls.__lock:
+            cls.__initialized = False
             servers_data: List[Dict[str, Any]] = []  # Default to empty list
 
             if (
@@ -478,6 +480,7 @@ class MCPConfig(BaseModel):
             #         )
 
             cls.__initialized = True
+            cls.__init_condition.notify_all()
             return instance
 
     @classmethod
@@ -693,54 +696,48 @@ class MCPConfig(BaseModel):
     def get_tools_prompt(self, server_name: str = "") -> str:
         """Get a prompt for all tools"""
 
-        # just to wait for pending initialization
-        with self.__lock:
-            pass
+        with self.__init_condition:
+            while not self.__initialized:
+                self.__init_condition.wait()
+            servers_snapshot = list(self.servers)
+
+        if not servers_snapshot:
+            raise RuntimeError("No MCP servers have been initialized")
 
         prompt = '## "Remote (MCP Server) Agent Tools" available:\n\n'
-        server_names = []
-        for server in self.servers:
-            if not server_name or server.name == server_name:
-                server_names.append(server.name)
+        if server_name:
+            servers_snapshot = [s for s in servers_snapshot if s.name == server_name]
+            if not servers_snapshot:
+                raise ValueError(f"Server {server_name} not found")
 
-        if server_name and server_name not in server_names:
-            raise ValueError(f"Server {server_name} not found")
+        for server in servers_snapshot:
+            sname = server.name
+            prompt += f"### {sname}\n"
+            prompt += f"{server.description}\n"
+            tools = server.get_tools()
 
-        for server in self.servers:
-            if server.name in server_names:
-                server_name = server.name
-                prompt += f"### {server_name}\n"
-                prompt += f"{server.description}\n"
-                tools = server.get_tools()
+            for tool in tools:
+                prompt += (
+                    f"\n### {sname}.{tool['name']}:\n"
+                    f"{tool['description']}\n\n"
+                )
 
-                for tool in tools:
-                    prompt += (
-                        f"\n### {server_name}.{tool['name']}:\n"
-                        f"{tool['description']}\n\n"
-                        # f"#### Categories:\n"
-                        # f"* kind: MCP Server Tool\n"
-                        # f'* server: "{server_name}" ({server.description})\n\n'
-                        # f"#### Arguments:\n"
-                    )
+                input_schema = (
+                    json.dumps(tool["input_schema"]) if tool["input_schema"] else ""
+                )
 
-                    input_schema = (
-                        json.dumps(tool["input_schema"]) if tool["input_schema"] else ""
-                    )
+                prompt += f"#### Input schema for tool_args:\n{input_schema}\n"
 
-                    prompt += f"#### Input schema for tool_args:\n{input_schema}\n"
+                prompt += "\n"
 
-                    prompt += "\n"
-
-                    prompt += (
-                        f"#### Usage:\n"
-                        f"{{\n"
-                        # f'    "observations": ["..."],\n' # TODO: this should be a prompt file with placeholders
-                        f'    "thoughts": ["..."],\n'
-                        # f'    "reflection": ["..."],\n' # TODO: this should be a prompt file with placeholders
-                        f"    \"tool_name\": \"{server_name}.{tool['name']}\",\n"
-                        f'    "tool_args": !follow schema above\n'
-                        f"}}\n"
-                    )
+                prompt += (
+                    f"#### Usage:\n"
+                    f"{{\n"
+                    f'    "thoughts": ["..."],\n'
+                    f"    \"tool_name\": \"{sname}.{tool['name']}\",\n"
+                    f'    "tool_args": !follow schema above\n'
+                    f"}}\n"
+                )
 
         return prompt
 
